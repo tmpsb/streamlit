@@ -1,0 +1,31 @@
+name: Scheduled Redeploy
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 每天 UTC 时间 0 点触发 (可以根据需要修改)
+    # 例如 '0 0 * * *' 是每天午夜
+    # '0 */6 * * *' 是每6小时
+    - cron: "0 */8 * * *"
+
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Pull, create empty commit and push
+        run: |
+          git pull
+          git commit --allow-empty -m "Scheduled redeploy to restart app"
+          git push
