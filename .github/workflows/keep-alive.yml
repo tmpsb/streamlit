@@ -1,0 +1,84 @@
+# GitHub Actions 定时重新部署保活
+name: Keep Streamlit App Alive
+
+on:
+  workflow_dispatch: # 允许手动触发
+  schedule:
+    # 每8小时重新推送一次（避免12小时睡眠机制）
+    - cron: '0 */8 * * *'
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: 创建空提交并推送以触发重新部署
+        id: keep-alive
+        run: |
+          echo "开始保活流程 - $(date)"
+          git pull origin main || git pull origin master || echo "拉取失败，继续执行"
+          
+          # 创建空提交以触发Streamlit重新部署
+          git commit --allow-empty -m "🔄 自动保活: $(date '+%Y-%m-%d %H:%M:%S UTC') - 防止应用睡眠"
+          
+          # 推送到远程仓库触发重新部署
+          git push
+          
+          echo "保活完成 - Streamlit应用将重新部署并保持活跃"
+        continue-on-error: true
+
+      - name: 生成README.md文件
+        if: always()
+        run: |
+          # 获取当前时间戳（北京时间）
+          TIMESTAMP=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')
+          
+          # 检查上一步是否成功
+          if [ "${{ steps.keep-alive.outcome }}" = "success" ]; then
+            STATUS="✅ 保活成功"
+          else
+            STATUS="❌ 保活失败"
+          fi
+          
+          # 创建README.md内容（直接覆盖）
+          cat > README.md << EOF
+          # Streamlit项目保活
+
+          **最后运行时间**: \`$TIMESTAMP\`
+
+          **运行结果**: <br>
+          $STATUS
+          EOF
+          
+          echo "README.md已生成，内容如下："
+          cat README.md
+
+      - name: 提交并推送README.md
+        if: always()
+        run: |
+          git add README.md
+          git commit -m "📝 更新保活状态 - $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')"
+          git push
+          echo "README.md已更新并推送到仓库"
+
+      - name: Delete old workflow runs
+        uses: MajorScruffy/delete-old-workflow-runs@v0.3.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          repository: ${{ github.repository }}
+          older-than-seconds: 3600  # 删除1小时前的记录
